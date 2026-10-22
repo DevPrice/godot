@@ -801,7 +801,7 @@ private:
 	void _process_sss(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_camera);
 
 	/* Debug */
-	void _debug_draw_cluster(Ref<RenderSceneBuffersRD> p_render_buffers);
+	void _debug_draw_cluster(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_depth_buffer_projection);
 
 protected:
 	/* setup */

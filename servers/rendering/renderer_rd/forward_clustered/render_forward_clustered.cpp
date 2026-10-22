@@ -1309,7 +1309,7 @@ void RenderForwardClustered::_update_sdfgi(RenderDataRD *p_render_data) {
 
 /* Debug */
 
-void RenderForwardClustered::_debug_draw_cluster(Ref<RenderSceneBuffersRD> p_render_buffers) {
+void RenderForwardClustered::_debug_draw_cluster(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_depth_buffer_projection) {
 	if (p_render_buffers.is_valid() && current_cluster_builder != nullptr) {
 		RSE::ViewportDebugDraw dd = get_debug_draw_mode();
 
@@ -1334,7 +1334,7 @@ void RenderForwardClustered::_debug_draw_cluster(Ref<RenderSceneBuffersRD> p_ren
 				default: {
 				}
 			}
-			current_cluster_builder->debug(elem_type);
+			current_cluster_builder->debug(elem_type, p_depth_buffer_projection);
 		}
 	}
 }
@@ -2638,7 +2638,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	if (rb_data.is_valid()) {
-		_debug_draw_cluster(rb);
+		_debug_draw_cluster(rb, p_render_data->scene_data->cam_projection);
 
 		RENDER_TIMESTAMP("Tonemap");
 

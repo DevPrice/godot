@@ -545,7 +545,7 @@ void ClusterBuilderRD::bake_cluster() {
 	RD::get_singleton()->draw_command_end_label();
 }
 
-void ClusterBuilderRD::debug(ElementType p_element) {
+void ClusterBuilderRD::debug(ElementType p_element, const Projection &p_depth_buffer_projection) {
 	ERR_FAIL_COND(debug_uniform_set.is_null());
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, shared->cluster_debug.shader_pipeline);
@@ -558,10 +558,9 @@ void ClusterBuilderRD::debug(ElementType p_element) {
 	push_constant.cluster_screen_size[1] = cluster_screen_size.y;
 	push_constant.cluster_shift = Math::get_shift_from_power_of_2(cluster_size);
 	push_constant.cluster_type = p_element;
-	push_constant.orthogonal = camera_orthogonal;
 	push_constant.z_far = z_far;
-	push_constant.z_near = z_near;
 	push_constant.max_cluster_element_count_div_32 = max_elements_by_type / 32;
+	RendererRD::MaterialStorage::store_view_depth_rows(p_depth_buffer_projection, push_constant.view_z_row, push_constant.view_w_row);
 
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(ClusterBuilderSharedDataRD::ClusterDebug::PushConstant));
 

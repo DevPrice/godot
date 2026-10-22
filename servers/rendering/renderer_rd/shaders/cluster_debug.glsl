@@ -41,18 +41,17 @@ const vec3 usage_gradient[33] = vec3[]( // 1 (none) + 32
 		vec3(0.83, 0.22, 0.32),
 		vec3(1.00, 0.63, 0.70));
 layout(push_constant, std430) uniform Params {
+	// See MaterialStorage::store_view_depth_rows().
+	vec4 view_z_row;
+	vec4 view_w_row;
+
 	uvec2 screen_size;
 	uvec2 cluster_screen_size;
 
 	uint cluster_shift;
 	uint cluster_type;
-	float z_near;
 	float z_far;
-
-	bool orthogonal;
 	uint max_cluster_element_count_div_32;
-	uint pad1;
-	uint pad2;
 }
 params;
 
@@ -78,14 +77,8 @@ void main() {
 	offset *= (params.max_cluster_element_count_div_32 + 32);
 
 	//depth buffers generally can't be accessed via image API
-	float depth = texelFetch(sampler2D(depth_buffer, depth_buffer_sampler), ivec2(screen_pos), 0).r * 2.0 - 1.0;
-
-	if (params.orthogonal) {
-		depth = ((depth + (params.z_far + params.z_near) / (params.z_far - params.z_near)) * (params.z_far - params.z_near)) / 2.0;
-	} else {
-		depth = 2.0 * params.z_near * params.z_far / (params.z_far + params.z_near - depth * (params.z_far - params.z_near));
-	}
-	depth /= params.z_far;
+	vec4 ndc = vec4((vec2(screen_pos) + 0.5) / vec2(params.screen_size) * 2.0 - 1.0, texelFetch(sampler2D(depth_buffer, depth_buffer_sampler), ivec2(screen_pos), 0).r, 1.0);
+	float depth = -dot(params.view_z_row, ndc) / dot(params.view_w_row, ndc) / params.z_far;
 
 	uint slice = uint(clamp(floor(depth * 32.0), 0.0, 31.0));
 	uint slice_minmax = cluster_data.data[offset + params.max_cluster_element_count_div_32 + slice];

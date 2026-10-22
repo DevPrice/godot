@@ -107,19 +107,16 @@ class ClusterBuilderSharedDataRD {
 
 	struct ClusterDebug {
 		struct PushConstant {
+			float view_z_row[4];
+			float view_w_row[4];
+
 			uint32_t screen_size[2];
 			uint32_t cluster_screen_size[2];
 
 			uint32_t cluster_shift;
 			uint32_t cluster_type;
-			float z_near;
 			float z_far;
-
-			uint32_t orthogonal;
 			uint32_t max_cluster_element_count_div_32;
-
-			uint32_t pad1;
-			uint32_t pad2;
 		};
 
 		ClusterDebugShaderRD cluster_debug_shader;
@@ -421,7 +418,7 @@ public:
 	}
 
 	void bake_cluster();
-	void debug(ElementType p_element);
+	void debug(ElementType p_element, const Projection &p_depth_buffer_projection);
 
 	RID get_cluster_buffer() const;
 	uint32_t get_cluster_size() const;
