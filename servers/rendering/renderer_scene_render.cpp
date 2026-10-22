@@ -48,6 +48,10 @@ void RendererSceneRender::CameraData::set_camera(const Transform3D p_transform, 
 	view_projection[0] = p_projection;
 	taa_jitter = p_taa_jitter;
 	taa_frame_count = p_taa_frame_count;
+
+	has_oblique_near_plane = false;
+	main_clip_projection = main_projection;
+	view_clip_projection[0] = view_projection[0];
 }
 
 void RendererSceneRender::CameraData::set_multiview_camera(const Transform3D &p_transform, const LocalVector<Transform3D> &p_offsets, const LocalVector<Projection> &p_projections, bool p_is_orthogonal, bool p_vaspect, uint32_t p_visible_layers) {
@@ -65,6 +69,35 @@ void RendererSceneRender::CameraData::set_multiview_camera(const Transform3D &p_
 	for (uint32_t v = 0; v < view_count; v++) {
 		view_offset[v] = p_offsets[v];
 		view_projection[v] = p_projections[v] * Projection(view_offset[v].inverse());
+	}
+
+	has_oblique_near_plane = false;
+	main_clip_projection = main_projection;
+	for (uint32_t v = 0; v < view_count; v++) {
+		view_clip_projection[v] = view_projection[v];
+	}
+}
+
+void RendererSceneRender::CameraData::set_oblique_near_plane(const Plane &p_plane) {
+	// All projections map from main camera space; for views, the eye offset is part of the projection.
+	const Plane local_plane = main_transform.affine_inverse().xform(p_plane);
+
+	Projection view_clip[MAX_RENDER_VIEWS];
+	for (uint32_t v = 0; v < view_count; v++) {
+		view_clip[v] = view_projection[v];
+		if (!view_clip[v].set_oblique_near_plane(local_plane)) {
+			return;
+		}
+	}
+
+	has_oblique_near_plane = true;
+	oblique_near_plane = p_plane;
+	// With multiple views, the combined projection's eye lies behind the real eyes, so a plane between them is valid for
+	// every view but not for it; it then keeps its regular near plane, which only makes it contain more.
+	main_clip_projection = main_projection;
+	main_clip_projection.set_oblique_near_plane(local_plane);
+	for (uint32_t v = 0; v < view_count; v++) {
+		view_clip_projection[v] = view_clip[v];
 	}
 }
 

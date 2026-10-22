@@ -57,6 +57,8 @@ public:
 			Vector3 pixel_u_interp;
 			Vector3 pixel_v_interp;
 			bool camera_orthogonal;
+			bool use_oblique_near_plane;
+			Plane oblique_near_plane;
 			Size2i buffer_size;
 		};
 
@@ -73,7 +75,7 @@ public:
 		virtual void clear() override;
 		virtual void resize(const Size2i &p_size) override;
 		void sort_rays(const Vector3 &p_camera_dir, bool p_orthogonal);
-		void update_camera_rays(const Transform3D &p_cam_transform, const Vector3 &p_near_bottom_left, const Vector2 &p_near_extents, real_t p_z_far, bool p_cam_orthogonal);
+		void update_camera_rays(const Transform3D &p_cam_transform, const Vector3 &p_near_bottom_left, const Vector2 &p_near_extents, real_t p_z_far, bool p_cam_orthogonal, const Plane *p_oblique_near_plane);
 
 		~RaycastHZBuffer();
 	};
@@ -182,7 +184,7 @@ public:
 	virtual HZBuffer *buffer_get_ptr(RID p_buffer) override;
 	virtual void buffer_set_scenario(RID p_buffer, RID p_scenario) override;
 	virtual void buffer_set_size(RID p_buffer, const Vector2i &p_size) override;
-	virtual void buffer_update(RID p_buffer, const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal) override;
+	virtual void buffer_update(RID p_buffer, const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const Plane *p_oblique_near_plane = nullptr) override;
 
 	virtual RID buffer_get_debug_texture(RID p_buffer) override;
 

@@ -147,6 +147,15 @@ void RendererSceneCull::camera_set_transform(RID p_camera, const Transform3D &p_
 	camera->transform = p_transform.orthonormalized();
 }
 
+void RendererSceneCull::camera_set_oblique_near_plane(RID p_camera, bool p_enable, const Plane &p_plane) {
+	Camera *camera = camera_owner.get_or_null(p_camera);
+	ERR_FAIL_NULL(camera);
+	ERR_FAIL_COND(p_enable && p_plane.normal.is_zero_approx());
+
+	camera->use_oblique_near_plane = p_enable;
+	camera->oblique_near_plane = p_enable ? p_plane.normalized() : Plane();
+}
+
 void RendererSceneCull::camera_set_cull_mask(RID p_camera, uint32_t p_layers) {
 	Camera *camera = camera_owner.get_or_null(p_camera);
 	ERR_FAIL_NULL(camera);
@@ -2799,13 +2808,17 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 		ERR_FAIL_MSG("Unsupported camera setup.");
 	}
 
+	if (camera->use_oblique_near_plane) {
+		camera_data.set_oblique_near_plane(camera->oblique_near_plane);
+	}
+
 	RID environment = _render_get_environment(p_camera, p_scenario);
 	RID compositor = _render_get_compositor(p_camera, p_scenario);
 
 	RENDER_TIMESTAMP("Update Occlusion Buffer")
 
 	// For now just cull on the first camera
-	RendererSceneOcclusionCull::get_singleton()->buffer_update(p_viewport, camera_data.main_transform, camera_data.main_projection, camera_data.is_orthogonal);
+	RendererSceneOcclusionCull::get_singleton()->buffer_update(p_viewport, camera_data.main_transform, camera_data.main_projection, camera_data.is_orthogonal, camera_data.has_oblique_near_plane ? &camera_data.oblique_near_plane : nullptr);
 
 	_render_scene(&camera_data, p_render_buffers, environment, camera->attributes, compositor, camera->visible_layers, p_scenario, p_viewport, p_shadow_atlas, RID(), -1, p_screen_mesh_lod_threshold, p_window_output_max_value, true, r_render_info);
 #endif
@@ -3378,6 +3391,11 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	/* STEP 2 - CULL */
 
 	Vector<Plane> planes = p_camera_data->main_projection.get_projection_planes(p_camera_data->main_transform);
+	if (p_camera_data->has_oblique_near_plane) {
+		// The side planes of the clip projection are identical. Keeping the reference far plane instead of the oblique
+		// one, which only ever lies further out, stops objects past the far distance from appearing.
+		planes.write[Projection::PLANE_NEAR] = -p_camera_data->oblique_near_plane;
+	}
 	cull.frustum = Frustum(planes);
 
 	Vector<RID> directional_lights;

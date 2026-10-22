@@ -118,6 +118,14 @@ struct RenderDataGLES3 {
 	Vector3 view_eye_offset[RendererSceneRender::MAX_RENDER_VIEWS];
 	Projection view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
 
+	// What is rasterized when the camera has an oblique near plane; see RendererSceneRender::CameraData.
+	bool has_oblique_near_plane = false;
+	Projection oblique_cam_projection;
+	Projection oblique_view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
+
+	const Projection &get_cam_clip_projection() const { return has_oblique_near_plane ? oblique_cam_projection : cam_projection; }
+	const Projection &get_view_clip_projection(uint32_t p_view) const { return has_oblique_near_plane ? oblique_view_projection[p_view] : view_projection[p_view]; }
+
 	float z_near = 0.0;
 	float z_far = 0.0;
 

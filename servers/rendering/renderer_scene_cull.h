@@ -89,6 +89,9 @@ public:
 		RID attributes;
 		RID compositor;
 
+		bool use_oblique_near_plane = false;
+		Plane oblique_near_plane; // World space; its normal points to the visible side.
+
 		Transform3D transform; // Our main camera transform
 		LocalVector<Transform3D> offsets; // camera offsets for each view
 		LocalVector<Projection> projections; // projection matrix for each view
@@ -115,6 +118,7 @@ public:
 	virtual void camera_set_frustum(RID p_camera, float p_size, Vector2 p_offset, float p_z_near, float p_z_far);
 	virtual void camera_set_xr_projections(RID p_camera, TypedArray<Projection> p_projections, TypedArray<Transform3D> p_offsets = TypedArray<Transform3D>());
 	virtual void camera_set_transform(RID p_camera, const Transform3D &p_transform);
+	virtual void camera_set_oblique_near_plane(RID p_camera, bool p_enable, const Plane &p_plane);
 	virtual void camera_set_cull_mask(RID p_camera, uint32_t p_layers);
 	virtual void camera_set_environment(RID p_camera, RID p_env);
 	virtual void camera_set_camera_attributes(RID p_camera, RID p_attributes);

@@ -318,8 +318,19 @@ public:
 		Vector2 taa_jitter;
 		float taa_frame_count = 0.0f;
 
+		// main_projection and view_projection describe the camera's frustum and are what frustum parameters (near, far,
+		// FOV, extents) are derived from. The clip projections are what is rasterized and what the depth buffer holds;
+		// they differ only when an oblique near plane is set, and then only in their clip-space z row.
+		bool has_oblique_near_plane = false;
+		Plane oblique_near_plane; // World space; its normal points to the visible side.
+		Projection main_clip_projection;
+		Projection view_clip_projection[RendererSceneRender::MAX_RENDER_VIEWS];
+
 		void set_camera(const Transform3D p_transform, const Projection p_projection, bool p_is_orthogonal, bool p_vaspect, const Vector2 &p_taa_jitter = Vector2(), float p_taa_frame_count = 0.0f, uint32_t p_visible_layers = 0xFFFFFFFF);
 		void set_multiview_camera(const Transform3D &p_transform, const LocalVector<Transform3D> &p_offsets, const LocalVector<Projection> &p_projection, bool p_is_orthogonal, bool p_vaspect, uint32_t p_visible_layers = 0xFFFFFFFF);
+		// Must be called after set_camera() or set_multiview_camera(). Leaves the camera unchanged if the plane cannot be
+		// applied to every view, e.g. because an eye is on its visible side.
+		void set_oblique_near_plane(const Plane &p_plane);
 	};
 
 	virtual void render_scene(const Ref<RenderSceneBuffers> &p_render_buffers, const CameraData *p_camera_data, const CameraData *p_prev_camera_data, const PagedArray<RenderGeometryInstance *> &p_instances, const PagedArray<RID> &p_lights, const PagedArray<RID> &p_reflection_probes, const PagedArray<RID> &p_voxel_gi_instances, const PagedArray<RID> &p_decals, const PagedArray<RID> &p_lightmaps, const PagedArray<RID> &p_fog_volumes, RID p_environment, RID p_camera_attributes, RID p_compositor, RID p_shadow_atlas, RID p_occluder_debug_tex, RID p_reflection_atlas, RID p_reflection_probe, int p_reflection_probe_pass, float p_screen_mesh_lod_threshold, const RenderShadowData *p_render_shadows, int p_render_shadow_count, const RenderSDFGIData *p_render_sdfgi_regions, int p_render_sdfgi_region_count, float p_window_output_max_value, const RenderSDFGIUpdateData *p_sdfgi_update_data = nullptr, RenderingServerTypes::RenderInfo *r_render_info = nullptr) = 0;

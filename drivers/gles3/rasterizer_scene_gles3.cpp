@@ -1575,7 +1575,7 @@ void RasterizerSceneGLES3::_bind_global_shader_parameters() {
 void RasterizerSceneGLES3::_setup_environment(const RenderDataGLES3 *p_render_data, bool p_no_fog, const Size2i &p_screen_size, bool p_flip_y, const Color &p_default_bg_color, bool p_pancake_shadows, float p_shadow_bias) {
 	Projection correction;
 	correction.set_depth_correction(p_flip_y, true, false);
-	Projection projection = correction * p_render_data->cam_projection;
+	Projection projection = correction * p_render_data->get_cam_clip_projection();
 	//store camera into ubo
 	GLES3::MaterialStorage::store_camera(projection, scene_state.data.projection_matrix);
 	GLES3::MaterialStorage::store_camera(projection.inverse(), scene_state.data.inv_projection_matrix);
@@ -1587,7 +1587,7 @@ void RasterizerSceneGLES3::_setup_environment(const RenderDataGLES3 *p_render_da
 	if (p_render_data->view_count > 1) {
 		scene_state.multiview_data.view_index = 0;
 		for (uint32_t v = 0; v < p_render_data->view_count; v++) {
-			projection = correction * p_render_data->view_projection[v];
+			projection = correction * p_render_data->get_view_clip_projection(v);
 			GLES3::MaterialStorage::store_camera(projection, scene_state.multiview_data.projection_matrix_view[v]);
 			GLES3::MaterialStorage::store_camera(projection.inverse(), scene_state.multiview_data.inv_projection_matrix_view[v]);
 
@@ -2492,6 +2492,12 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 		for (uint32_t v = 0; v < p_camera_data->view_count; v++) {
 			render_data.view_eye_offset[v] = p_camera_data->view_offset[v].origin;
 			render_data.view_projection[v] = p_camera_data->view_projection[v];
+		}
+
+		render_data.has_oblique_near_plane = p_camera_data->has_oblique_near_plane;
+		render_data.oblique_cam_projection = p_camera_data->main_clip_projection;
+		for (uint32_t v = 0; v < p_camera_data->view_count; v++) {
+			render_data.oblique_view_projection[v] = p_camera_data->view_clip_projection[v];
 		}
 
 		render_data.z_near = p_camera_data->main_projection.get_z_near();

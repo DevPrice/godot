@@ -82,7 +82,7 @@ void RaycastOcclusionCull::RaycastHZBuffer::resize(const Size2i &p_size) {
 	memset(camera_ray_masks.ptr(), ~0, camera_rays_tile_count * TILE_RAYS * sizeof(uint32_t));
 }
 
-void RaycastOcclusionCull::RaycastHZBuffer::update_camera_rays(const Transform3D &p_cam_transform, const Vector3 &p_near_bottom_left, const Vector2 &p_near_extents, real_t p_z_far, bool p_cam_orthogonal) {
+void RaycastOcclusionCull::RaycastHZBuffer::update_camera_rays(const Transform3D &p_cam_transform, const Vector3 &p_near_bottom_left, const Vector2 &p_near_extents, real_t p_z_far, bool p_cam_orthogonal, const Plane *p_oblique_near_plane) {
 	CameraRayThreadData td;
 	td.thread_count = WorkerThreadPool::get_singleton()->get_thread_count();
 
@@ -91,6 +91,10 @@ void RaycastOcclusionCull::RaycastHZBuffer::update_camera_rays(const Transform3D
 	td.camera_pos = p_cam_transform.origin;
 	td.camera_dir = -p_cam_transform.basis.get_column(2);
 	td.camera_orthogonal = p_cam_orthogonal;
+	td.use_oblique_near_plane = p_oblique_near_plane != nullptr;
+	if (td.use_oblique_near_plane) {
+		td.oblique_near_plane = *p_oblique_near_plane;
+	}
 
 	// Calculate the world coordinates of the viewport.
 	td.pixel_corner = p_cam_transform.xform(p_near_bottom_left);
@@ -151,6 +155,21 @@ void RaycastOcclusionCull::RaycastHZBuffer::_generate_camera_rays(const CameraRa
 			tile.ray.dir_z[j] = dir.z;
 
 			tile.ray.tfar[j] = p_data->z_far;
+
+			if (p_data->use_oblique_near_plane) {
+				// Occluders on the hidden side of the plane are not rendered, so they must not occlude anything.
+				// sort_rays() stores tfar as the depth even on a miss, so rays whose far end lies on the hidden side
+				// are emptied (tnear = tfar) instead of shortened, which leaves their pixel unoccluded.
+				const Plane &plane = p_data->oblique_near_plane;
+				const Vector3 origin(tile.ray.org_x[j], tile.ray.org_y[j], tile.ray.org_z[j]);
+				const real_t facing = plane.normal.dot(dir);
+				const real_t distance = plane.distance_to(origin);
+				if (facing > CMP_EPSILON) {
+					tile.ray.tnear[j] = MAX(tile.ray.tnear[j], -distance / facing);
+				} else if (distance < 0 || distance + facing * tile.ray.tfar[j] < 0) {
+					tile.ray.tnear[j] = tile.ray.tfar[j];
+				}
+			}
 			tile.ray.time[j] = 0.0f;
 
 			tile.ray.flags[j] = 0;
@@ -593,7 +612,7 @@ Rect2 _get_viewport_rect(const Projection &p_cam_projection) {
 	return Rect2(bottom_left, 2 * half_extents);
 }
 
-void RaycastOcclusionCull::buffer_update(RID p_buffer, const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal) {
+void RaycastOcclusionCull::buffer_update(RID p_buffer, const Transform3D &p_cam_transform, const Projection &p_cam_projection, bool p_cam_orthogonal, const Plane *p_oblique_near_plane) {
 	if (!buffers.has(p_buffer)) {
 		return;
 	}
@@ -612,7 +631,7 @@ void RaycastOcclusionCull::buffer_update(RID p_buffer, const Transform3D &p_cam_
 	bottom_left += _get_jitter(vp_rect, buffer.get_occlusion_buffer_size());
 	Vector3 near_bottom_left = Vector3(bottom_left.x, bottom_left.y, -p_cam_projection.get_z_near());
 
-	buffer.update_camera_rays(p_cam_transform, near_bottom_left, vp_rect.get_size(), p_cam_projection.get_z_far(), p_cam_orthogonal);
+	buffer.update_camera_rays(p_cam_transform, near_bottom_left, vp_rect.get_size(), p_cam_projection.get_z_far(), p_cam_orthogonal, p_oblique_near_plane);
 
 	scenario.raycast(buffer.camera_rays, buffer.camera_ray_masks.ptr(), buffer.camera_rays_tile_count);
 	buffer.sort_rays(-p_cam_transform.basis.get_column(2), p_cam_orthogonal);

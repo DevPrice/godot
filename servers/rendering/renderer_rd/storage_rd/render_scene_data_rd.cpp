@@ -44,7 +44,7 @@ Projection RenderSceneDataRD::get_cam_projection() const {
 	correction.set_depth_correction(flip_y);
 	correction.add_jitter_offset(taa_jitter);
 
-	return correction * cam_projection;
+	return correction * get_cam_clip_projection();
 }
 
 uint32_t RenderSceneDataRD::get_view_count() const {
@@ -64,7 +64,7 @@ Projection RenderSceneDataRD::get_view_projection(uint32_t p_view) const {
 	correction.set_depth_correction(flip_y);
 	correction.add_jitter_offset(taa_jitter);
 
-	return correction * view_projection[p_view];
+	return correction * get_view_clip_projection(p_view);
 }
 
 RID RenderSceneDataRD::create_uniform_buffer() {
@@ -84,7 +84,7 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 	Projection correction;
 	correction.set_depth_correction(flip_y);
 	correction.add_jitter_offset(taa_jitter);
-	Projection projection = correction * cam_projection;
+	Projection projection = correction * get_cam_clip_projection();
 
 	//store camera into ubo
 	RendererRD::MaterialStorage::store_camera(projection, ubo.projection_matrix);
@@ -99,7 +99,7 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 #endif
 
 	for (uint32_t v = 0; v < view_count; v++) {
-		projection = correction * view_projection[v];
+		projection = correction * get_view_clip_projection(v);
 		RendererRD::MaterialStorage::store_camera(projection, ubo.projection_matrix_view[v]);
 		RendererRD::MaterialStorage::store_camera(projection.inverse(), ubo.inv_projection_matrix_view[v]);
 
@@ -280,7 +280,7 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 		Projection prev_correction;
 		prev_correction.set_depth_correction(true);
 		prev_correction.add_jitter_offset(prev_taa_jitter);
-		Projection prev_projection = prev_correction * prev_cam_projection;
+		Projection prev_projection = prev_correction * get_prev_cam_clip_projection();
 
 		//store camera into ubo
 		RendererRD::MaterialStorage::store_camera(prev_projection, prev_ubo.projection_matrix);
@@ -295,7 +295,7 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 #endif
 
 		for (uint32_t v = 0; v < view_count; v++) {
-			prev_projection = prev_correction * view_projection[v];
+			prev_projection = prev_correction * get_view_clip_projection(v);
 			RendererRD::MaterialStorage::store_camera(prev_projection, prev_ubo.projection_matrix_view[v]);
 			RendererRD::MaterialStorage::store_camera(prev_projection.inverse(), prev_ubo.inv_projection_matrix_view[v]);
 		}

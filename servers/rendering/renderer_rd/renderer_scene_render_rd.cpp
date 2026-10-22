@@ -1154,7 +1154,7 @@ void RendererSceneRenderRD::_render_buffers_debug_draw(const RenderDataRD *p_ren
 		RID dest_fb = texture_storage->render_target_get_rd_framebuffer(render_target);
 		Size2i resolution = rb->get_internal_size();
 
-		debug_effects->draw_motion_vectors(velocity, depth, dest_fb, p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform, p_render_data->scene_data->prev_cam_projection, p_render_data->scene_data->prev_cam_transform, resolution);
+		debug_effects->draw_motion_vectors(velocity, depth, dest_fb, p_render_data->scene_data->get_cam_clip_projection(), p_render_data->scene_data->cam_transform, p_render_data->scene_data->get_prev_cam_clip_projection(), p_render_data->scene_data->prev_cam_transform, resolution);
 	}
 }
 
@@ -1398,6 +1398,14 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 
 		for (uint32_t v = 0; v < p_camera_data->view_count; v++) {
 			scene_data.prev_view_projection[v] = p_prev_camera_data->view_projection[v];
+		}
+
+		scene_data.has_oblique_near_plane = p_camera_data->has_oblique_near_plane;
+		scene_data.oblique_cam_projection = p_camera_data->main_clip_projection;
+		scene_data.prev_has_oblique_near_plane = p_prev_camera_data->has_oblique_near_plane;
+		scene_data.prev_oblique_cam_projection = p_prev_camera_data->main_clip_projection;
+		for (uint32_t v = 0; v < p_camera_data->view_count; v++) {
+			scene_data.oblique_view_projection[v] = p_camera_data->view_clip_projection[v];
 		}
 
 		scene_data.z_near = p_camera_data->main_projection.get_z_near();

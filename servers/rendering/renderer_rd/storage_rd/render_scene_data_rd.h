@@ -63,6 +63,20 @@ public:
 	Vector2 prev_taa_jitter;
 	Projection prev_view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
 
+	// The projections above describe the camera's frustum. With an oblique near plane, what is rasterized (and what
+	// the depth buffer holds) differs in its z row; see RendererSceneRender::CameraData. Read it through the
+	// get_*clip_projection() accessors, which fall back to the projections above.
+	bool has_oblique_near_plane = false;
+	Projection oblique_cam_projection;
+	Projection oblique_view_projection[RendererSceneRender::MAX_RENDER_VIEWS];
+	bool prev_has_oblique_near_plane = false;
+	Projection prev_oblique_cam_projection;
+
+	const Projection &get_cam_clip_projection() const { return has_oblique_near_plane ? oblique_cam_projection : cam_projection; }
+	const Projection &get_view_clip_projection(uint32_t p_view) const { return has_oblique_near_plane ? oblique_view_projection[p_view] : view_projection[p_view]; }
+	const Projection *get_view_clip_projections() const { return has_oblique_near_plane ? oblique_view_projection : view_projection; }
+	const Projection &get_prev_cam_clip_projection() const { return prev_has_oblique_near_plane ? prev_oblique_cam_projection : prev_cam_projection; }
+
 	float z_near = 0.0;
 	float z_far = 0.0;
 

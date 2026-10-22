@@ -162,6 +162,18 @@
 				Sets camera to use frustum projection. This mode allows adjusting the [param offset] argument to create "tilted frustum" effects.
 			</description>
 		</method>
+		<method name="camera_set_oblique_near_plane">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="enable" type="bool" />
+			<param index="2" name="plane" type="Plane" />
+			<description>
+				If [param enable] is [code]true[/code], replaces the camera's near clipping plane with [param plane], given in world space. Everything on the side its normal points to stays visible, everything on the other side is clipped. This is meant for planar reflections and portals, where the plane is the mirror or portal surface.
+				The plane applies on top of any projection set with [method camera_set_perspective], [method camera_set_orthogonal], [method camera_set_frustum] or [method camera_set_xr_projections], and is not reset by them. For perspective projections, it is ignored for any frame in which the eye (or, with multiple views, any eye) is not behind it.
+				[b]Note:[/b] The far plane is tilted so that nothing within the camera's far distance is clipped. In some directions, the result is that nothing is clipped at the far distance at all.
+				[b]Note:[/b] Depth no longer depends only on distance from the camera. Shaders that linearize the depth texture using the near and far distances will give wrong results; reconstruct positions with [code]INV_PROJECTION_MATRIX[/code] instead.
+			</description>
+		</method>
 		<method name="camera_set_orthogonal">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />

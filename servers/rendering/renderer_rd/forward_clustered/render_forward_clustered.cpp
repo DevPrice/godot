@@ -2312,8 +2312,8 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		if (using_motion_pass) {
 			if (scale_type == SCALE_MFX) {
 				motion_vectors_store->process(rb,
-						p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform,
-						p_render_data->scene_data->prev_cam_projection, p_render_data->scene_data->prev_cam_transform);
+						p_render_data->scene_data->get_cam_clip_projection(), p_render_data->scene_data->cam_transform,
+						p_render_data->scene_data->get_prev_cam_clip_projection(), p_render_data->scene_data->prev_cam_transform);
 			} else {
 				Vector<Color> motion_vector_clear_colors;
 				motion_vector_clear_colors.push_back(Color(-1, -1, 0, 0));
@@ -2356,7 +2356,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	if (debug_voxelgis) {
 		Projection dc;
 		dc.set_depth_correction(true);
-		Projection cm = (dc * p_render_data->scene_data->cam_projection) * Projection(p_render_data->scene_data->cam_transform.affine_inverse());
+		Projection cm = (dc * p_render_data->scene_data->get_cam_clip_projection()) * Projection(p_render_data->scene_data->cam_transform.affine_inverse());
 		RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(color_only_framebuffer);
 		RD::get_singleton()->draw_command_begin_label("Debug VoxelGIs");
 		for (int i = 0; i < (int)p_render_data->voxel_gi_instances->size(); i++) {
@@ -2371,7 +2371,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		dc.set_depth_correction(true);
 		Projection cms[RendererSceneRender::MAX_RENDER_VIEWS];
 		for (uint32_t v = 0; v < p_render_data->scene_data->view_count; v++) {
-			cms[v] = (dc * p_render_data->scene_data->view_projection[v]) * Projection(p_render_data->scene_data->cam_transform.affine_inverse());
+			cms[v] = (dc * p_render_data->scene_data->get_view_clip_projection(v)) * Projection(p_render_data->scene_data->cam_transform.affine_inverse());
 		}
 		_debug_sdfgi_probes(rb, color_only_framebuffer, p_render_data->scene_data->view_count, cms);
 	}
@@ -2638,7 +2638,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	if (rb_data.is_valid()) {
-		_debug_draw_cluster(rb, p_render_data->scene_data->cam_projection);
+		_debug_draw_cluster(rb, p_render_data->scene_data->get_cam_clip_projection());
 
 		RENDER_TIMESTAMP("Tonemap");
 
