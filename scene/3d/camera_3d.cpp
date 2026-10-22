@@ -196,6 +196,17 @@ void Camera3D::_update_process_mode() {
 
 void Camera3D::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			_update_oblique_near_plane_tracking();
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			const Callable update = callable_mp(this, &Camera3D::_update_oblique_near_plane);
+			if (RS::get_singleton()->is_connected(SNAME("frame_pre_draw"), update)) {
+				RS::get_singleton()->disconnect(SNAME("frame_pre_draw"), update);
+			}
+		} break;
+
 		case NOTIFICATION_ENTER_WORLD: {
 			// Needs to track the Viewport because it's needed on NOTIFICATION_EXIT_WORLD
 			// and Spatial will handle it first, including clearing its reference to the Viewport,
@@ -303,7 +314,10 @@ Projection Camera3D::_get_camera_projection(real_t p_near) const {
 
 Projection Camera3D::get_camera_projection() const {
 	ERR_FAIL_COND_V_MSG(!is_inside_tree(), Projection(), "Camera is not inside the scene tree.");
-	return _get_camera_projection(_near);
+	Projection projection = _get_camera_projection(_near);
+	Plane local_plane;
+	_apply_oblique_near_plane(projection, local_plane);
+	return projection;
 }
 
 void Camera3D::set_perspective(real_t p_fovy_degrees, real_t p_z_near, real_t p_z_far) {
@@ -437,6 +451,7 @@ Vector3 Camera3D::project_ray_origin(const Point2 &p_pos) const {
 	Vector2 cpos = get_viewport()->get_camera_coords(p_pos);
 	ERR_FAIL_COND_V(viewport_size.y == 0, Vector3());
 
+	Vector3 origin;
 	if (mode == PROJECTION_ORTHOGONAL) {
 		Vector2 pos = cpos / viewport_size;
 		real_t vsize, hsize;
@@ -452,11 +467,23 @@ Vector3 Camera3D::project_ray_origin(const Point2 &p_pos) const {
 		ray.x = pos.x * (hsize)-hsize / 2;
 		ray.y = (1.0 - pos.y) * (vsize)-vsize / 2;
 		ray.z = -_near;
-		ray = get_camera_transform().xform(ray);
-		return ray;
+		origin = get_camera_transform().xform(ray);
 	} else {
-		return get_camera_transform().origin;
-	};
+		origin = get_camera_transform().origin;
+	}
+
+	// Start where the ray enters the visible side, so ray casts don't hit what the oblique near plane clips away.
+	Projection projection = _get_camera_projection(_near);
+	Plane local_plane;
+	if (_apply_oblique_near_plane(projection, local_plane)) {
+		const Plane plane = get_camera_transform().xform(local_plane);
+		const Vector3 normal = project_ray_normal(p_pos);
+		Vector3 intersection;
+		if (!plane.is_point_over(origin) && plane.intersects_ray(origin, normal, &intersection)) {
+			origin = intersection;
+		}
+	}
+	return origin;
 }
 
 bool Camera3D::is_position_behind(const Vector3 &p_pos) const {
@@ -729,6 +756,8 @@ void Camera3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_keep_aspect_mode"), &Camera3D::get_keep_aspect_mode);
 	ClassDB::bind_method(D_METHOD("set_doppler_tracking", "mode"), &Camera3D::set_doppler_tracking);
 	ClassDB::bind_method(D_METHOD("get_doppler_tracking"), &Camera3D::get_doppler_tracking);
+	ClassDB::bind_method(D_METHOD("set_oblique_near_plane_node", "node"), &Camera3D::set_oblique_near_plane_node);
+	ClassDB::bind_method(D_METHOD("get_oblique_near_plane_node"), &Camera3D::get_oblique_near_plane_node);
 	ClassDB::bind_method(D_METHOD("get_frustum"), &Camera3D::_get_frustum);
 	ClassDB::bind_method(D_METHOD("is_position_in_frustum", "world_point"), &Camera3D::is_position_in_frustum);
 	ClassDB::bind_method(D_METHOD("get_camera_rid"), &Camera3D::get_camera);
@@ -756,6 +785,7 @@ void Camera3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "frustum_offset", PROPERTY_HINT_NONE, "suffix:m"), "set_frustum_offset", "get_frustum_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "near", PROPERTY_HINT_RANGE, "0.001,10,0.001,or_greater,exp,suffix:m"), "set_near", "get_near");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "far", PROPERTY_HINT_RANGE, "0.01,4000,0.01,or_greater,exp,suffix:m"), "set_far", "get_far");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "oblique_near_plane_node", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D"), "set_oblique_near_plane_node", "get_oblique_near_plane_node");
 
 	BIND_ENUM_CONSTANT(PROJECTION_PERSPECTIVE);
 	BIND_ENUM_CONSTANT(PROJECTION_ORTHOGONAL);
@@ -853,7 +883,13 @@ Vector<Plane> Camera3D::get_frustum() const {
 
 	Projection cm = _get_camera_projection(_near);
 
-	return cm.get_projection_planes(get_camera_transform());
+	Vector<Plane> planes = cm.get_projection_planes(get_camera_transform());
+	Plane local_plane;
+	if (_apply_oblique_near_plane(cm, local_plane)) {
+		// Same as the RenderingServer: only the near plane changes, the far plane stays where it was.
+		planes.write[Projection::PLANE_NEAR] = -get_camera_transform().xform(local_plane);
+	}
+	return planes;
 }
 
 TypedArray<Plane> Camera3D::_get_frustum() const {
@@ -895,6 +931,76 @@ Vector3 Camera3D::get_doppler_tracked_velocity() const {
 	} else {
 		return Vector3();
 	}
+}
+
+void Camera3D::set_oblique_near_plane_node(const NodePath &p_node) {
+	oblique_near_plane_node = p_node;
+	_update_oblique_near_plane_tracking();
+	update_configuration_warnings();
+}
+
+NodePath Camera3D::get_oblique_near_plane_node() const {
+	return oblique_near_plane_node;
+}
+
+bool Camera3D::_get_oblique_near_plane(Plane &r_plane) const {
+	if (oblique_near_plane_node.is_empty() || !is_inside_tree()) {
+		return false;
+	}
+	Node3D *node = Object::cast_to<Node3D>(get_node_or_null(oblique_near_plane_node));
+	if (!node || !node->is_inside_tree()) {
+		return false;
+	}
+	const Transform3D transform = node->get_global_transform_interpolated();
+	if (transform.basis.get_column(2).is_zero_approx()) {
+		return false;
+	}
+	r_plane = Plane(transform.basis.get_column(2).normalized(), transform.origin);
+	return true;
+}
+
+bool Camera3D::_apply_oblique_near_plane(Projection &r_projection, Plane &r_local_plane) const {
+	Plane plane;
+	if (!_get_oblique_near_plane(plane)) {
+		return false;
+	}
+	r_local_plane = get_camera_transform().affine_inverse().xform(plane);
+	return r_projection.set_oblique_near_plane(r_local_plane);
+}
+
+void Camera3D::_update_oblique_near_plane() {
+	Plane plane;
+	const bool enable = _get_oblique_near_plane(plane);
+	if (enable == oblique_near_plane_sent_enabled && (!enable || plane == oblique_near_plane_sent_plane)) {
+		return;
+	}
+	RS::get_singleton()->camera_set_oblique_near_plane(camera, enable, plane);
+	oblique_near_plane_sent_enabled = enable;
+	oblique_near_plane_sent_plane = plane;
+}
+
+void Camera3D::_update_oblique_near_plane_tracking() {
+	// Updated right before drawing, so the plane follows a target moved anywhere during the frame.
+	const Callable update = callable_mp(this, &Camera3D::_update_oblique_near_plane);
+	const bool track = is_inside_tree() && !oblique_near_plane_node.is_empty();
+	if (track != RS::get_singleton()->is_connected(SNAME("frame_pre_draw"), update)) {
+		if (track) {
+			RS::get_singleton()->connect(SNAME("frame_pre_draw"), update);
+		} else {
+			RS::get_singleton()->disconnect(SNAME("frame_pre_draw"), update);
+		}
+	}
+	_update_oblique_near_plane();
+}
+
+PackedStringArray Camera3D::get_configuration_warnings() const {
+	PackedStringArray warnings = Node3D::get_configuration_warnings();
+
+	if (!oblique_near_plane_node.is_empty() && is_inside_tree() && !Object::cast_to<Node3D>(get_node_or_null(oblique_near_plane_node))) {
+		warnings.push_back(RTR("\"Oblique Near Plane Node\" must point to a Node3D. The near plane is not replaced."));
+	}
+
+	return warnings;
 }
 
 #ifndef PHYSICS_3D_DISABLED

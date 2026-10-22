@@ -95,6 +95,14 @@ private:
 	DopplerTracking doppler_tracking = DOPPLER_TRACKING_DISABLED;
 	Ref<VelocityTracker3D> velocity_tracker;
 
+	NodePath oblique_near_plane_node;
+	bool oblique_near_plane_sent_enabled = false;
+	Plane oblique_near_plane_sent_plane;
+	bool _get_oblique_near_plane(Plane &r_plane) const;
+	bool _apply_oblique_near_plane(Projection &r_projection, Plane &r_local_plane) const;
+	void _update_oblique_near_plane();
+	void _update_oblique_near_plane_tracking();
+
 #ifndef PHYSICS_3D_DISABLED
 	RID pyramid_shape;
 	Vector<Vector3> pyramid_shape_points;
@@ -206,6 +214,11 @@ public:
 	DopplerTracking get_doppler_tracking() const;
 
 	Vector3 get_doppler_tracked_velocity() const;
+
+	void set_oblique_near_plane_node(const NodePath &p_node);
+	NodePath get_oblique_near_plane_node() const;
+
+	virtual PackedStringArray get_configuration_warnings() const override;
 
 #ifndef PHYSICS_3D_DISABLED
 	RID get_pyramid_shape_rid();

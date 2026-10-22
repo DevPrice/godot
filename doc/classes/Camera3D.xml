@@ -204,6 +204,12 @@
 		<member name="near" type="float" setter="set_near" getter="get_near" default="0.05">
 			The distance to the near culling boundary for this camera relative to its local Z axis. Lower values allow the camera to see objects more up close to its origin, at the cost of lower precision across the [i]entire[/i] range. Values lower than the default can lead to increased Z-fighting.
 		</member>
+		<member name="oblique_near_plane_node" type="NodePath" setter="set_oblique_near_plane_node" getter="get_oblique_near_plane_node" default="NodePath(&quot;&quot;)">
+			If set to a [Node3D], replaces the near clipping plane with the plane through that node's origin, facing the node's local +Z axis. Everything on the side +Z points to stays visible, everything on the other side is clipped. This is meant for planar reflections and portals: point it at the mirror or portal surface (a [QuadMesh] faces +Z) and render the reflected or portal camera in a [SubViewport]. The plane follows the node as it moves. See also [method RenderingServer.camera_set_oblique_near_plane].
+			For perspective projections, the plane is ignored while the camera is not behind it.
+			[method get_camera_projection], [method get_frustum], [method is_position_in_frustum] and [method project_ray_origin] take the plane into account; rays start where they cross it.
+			[b]Note:[/b] [XRCamera3D] renders with the plane, but its own implementations of these methods do not take it into account.
+		</member>
 		<member name="projection" type="int" setter="set_projection" getter="get_projection" enum="Camera3D.ProjectionType" default="0">
 			The camera's projection mode. In [constant PROJECTION_PERSPECTIVE] mode, objects' Z distance from the camera's local space scales their perceived size.
 		</member>

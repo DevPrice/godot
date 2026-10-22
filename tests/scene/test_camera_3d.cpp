@@ -392,6 +392,62 @@ TEST_CASE("[SceneTree][Camera3D] Project ray") {
 	memdelete(mock_viewport);
 }
 
+TEST_CASE("[SceneTree][Camera3D] Oblique near plane") {
+	Camera3D *test_camera = memnew(Camera3D);
+	SubViewport *mock_viewport = memnew(SubViewport);
+	mock_viewport->set_size(Vector2(400, 200));
+	SceneTree::get_singleton()->get_root()->add_child(mock_viewport);
+	mock_viewport->add_child(test_camera);
+	test_camera->set_perspective(90.0f, 0.05f, 100.0f);
+
+	// The plane faces the target's +Z axis, so this keeps everything further than 5 m.
+	Node3D *target = memnew(Node3D);
+	mock_viewport->add_child(target);
+	target->set_global_position(Vector3(0, 0, -5));
+	target->set_global_rotation_degrees(Vector3(0, 180, 0));
+
+	const Vector<Plane> reference_frustum = test_camera->get_frustum();
+	test_camera->set_oblique_near_plane_node(test_camera->get_path_to(target));
+
+	SUBCASE("Frustum") {
+		const Vector<Plane> frustum = test_camera->get_frustum();
+		CHECK(frustum[Projection::PLANE_NEAR].is_equal_approx(Plane(Vector3(0, 0, 1), -5)));
+		CHECK(frustum[Projection::PLANE_FAR].is_equal_approx(reference_frustum[Projection::PLANE_FAR]));
+		CHECK_FALSE(test_camera->is_position_in_frustum(Vector3(0, 0, -3)));
+		CHECK(test_camera->is_position_in_frustum(Vector3(0, 0, -10)));
+	}
+
+	SUBCASE("Projection") {
+		const Projection projection = test_camera->get_camera_projection();
+		CHECK(projection.get_projection_plane(Projection::PLANE_NEAR).normalized().is_equal_approx(Plane(Vector3(0, 0, 1), -5)));
+	}
+
+	SUBCASE("Rays start on the plane") {
+		CHECK(test_camera->project_ray_origin(Vector2(200, 100)).is_equal_approx(Vector3(0, 0, -5)));
+		CHECK(test_camera->project_ray_normal(Vector2(200, 100)).is_equal_approx(Vector3(0, 0, -1)));
+
+		target->set_global_rotation_degrees(Vector3(20, 160, 0));
+		const Plane plane(target->get_global_basis().get_column(2), target->get_global_position());
+		CHECK(Math::is_zero_approx(plane.distance_to(test_camera->project_ray_origin(Vector2(50, 150)))));
+		CHECK(Math::is_zero_approx(plane.distance_to(test_camera->project_ray_origin(Vector2(350, 30)))));
+	}
+
+	SUBCASE("Ignored while the camera is on the visible side") {
+		target->set_global_position(Vector3(0, 0, 5));
+		CHECK(test_camera->get_frustum()[Projection::PLANE_NEAR].is_equal_approx(reference_frustum[Projection::PLANE_NEAR]));
+		CHECK(test_camera->project_ray_origin(Vector2(200, 100)).is_equal_approx(Vector3()));
+	}
+
+	SUBCASE("Cleared") {
+		test_camera->set_oblique_near_plane_node(NodePath());
+		CHECK(test_camera->get_frustum()[Projection::PLANE_NEAR].is_equal_approx(reference_frustum[Projection::PLANE_NEAR]));
+	}
+
+	memdelete(target);
+	memdelete(test_camera);
+	memdelete(mock_viewport);
+}
+
 } // namespace TestCamera3D
 
 #endif // _3D_DISABLED
