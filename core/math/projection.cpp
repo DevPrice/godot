@@ -102,6 +102,42 @@ void Projection::adjust_perspective_znear(real_t p_new_znear) {
 	columns[3][2] = -2 * znear * zfar / deltaZ;
 }
 
+bool Projection::set_oblique_near_plane(const Plane &p_plane) {
+	// Generalization of http://terathon.com/code/oblique.html to off-axis, orthographic and eye-offset projections.
+	ERR_FAIL_COND_V(p_plane.normal.is_zero_approx(), false);
+	const Plane plane = p_plane.normalized();
+	const Vector4 plane_vec(plane.normal.x, plane.normal.y, plane.normal.z, -plane.d);
+	const Projection inv = inverse();
+
+	// Rows 0, 1 and 3 are untouched, so the eye (where every view ray meets) is also the eye of the result.
+	const Vector4 eye = inv.xform(Vector4(0, 0, 1, 0));
+	if (!Math::is_zero_approx(eye.w / eye.length())) {
+		const Vector3 eye_position = Vector3(eye.x, eye.y, eye.z) / eye.w;
+		if (plane.distance_to(eye_position) >= -CMP_EPSILON) {
+			return false;
+		}
+	}
+
+	// The new far plane must pass through the clip-space corner farthest on the visible side of the plane.
+	// Picking z as well as x and y matters for orthographic projections, where that corner can lie on the near face.
+	const Vector4 clip_plane = inv.xform_inv(plane_vec);
+	const Vector4 corner = inv.xform(Vector4(
+			clip_plane.x >= 0 ? 1 : -1,
+			clip_plane.y >= 0 ? 1 : -1,
+			clip_plane.z >= 0 ? 1 : -1,
+			1));
+	const real_t denominator = plane_vec.dot(corner);
+	if (denominator <= CMP_EPSILON * corner.length()) {
+		return false;
+	}
+
+	const Vector4 near_row = plane_vec * (2.0 / denominator);
+	for (int i = 0; i < 4; i++) {
+		columns[i][2] = near_row[i] - columns[i][3];
+	}
+	return true;
+}
+
 Projection Projection::create_depth_correction(bool p_flip_y) {
 	Projection proj;
 	proj.set_depth_correction(p_flip_y);

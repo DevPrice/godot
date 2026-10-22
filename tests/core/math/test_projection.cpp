@@ -275,6 +275,70 @@ TEST_CASE("[Projection] Adjust znear") {
 	CHECK(persp[3] == adjusted[3]);
 }
 
+static void check_oblique_near_plane(const Projection &p_reference, const Plane &p_plane) {
+	Projection oblique = p_reference;
+	REQUIRE(oblique.set_oblique_near_plane(p_plane));
+
+	for (int i = 0; i < 4; i++) {
+		CHECK(oblique[i][0] == p_reference[i][0]);
+		CHECK(oblique[i][1] == p_reference[i][1]);
+		CHECK(oblique[i][3] == p_reference[i][3]);
+	}
+
+	CHECK(oblique.get_projection_plane(Projection::PLANE_NEAR).normalized().is_equal_approx(-p_plane.normalized()));
+
+	// Nothing on the visible side of the plane that the reference projection shows may be clipped by the new far plane.
+	const Plane far = oblique.get_projection_plane(Projection::PLANE_FAR).normalized();
+	Vector3 endpoints[8];
+	REQUIRE(p_reference.get_endpoints(Transform3D(), endpoints));
+	for (const Vector3 &endpoint : endpoints) {
+		if (p_plane.distance_to(endpoint) >= 0) {
+			CHECK(far.distance_to(endpoint) <= 0.001);
+		}
+	}
+}
+
+TEST_CASE("[Projection] Oblique near plane") {
+	SUBCASE("Perspective") {
+		const Projection persp = Projection::create_perspective(70, 16.0 / 9.0, 0.05, 400);
+		check_oblique_near_plane(persp, Plane(Vector3(0.3, -0.2, -1).normalized(), Vector3(0, 0, -5)));
+		// A reflection camera below a floor, looking almost along it.
+		check_oblique_near_plane(persp, Plane(Vector3(0, 1, -0.05).normalized(), Vector3(0, 2, -10)));
+	}
+
+	SUBCASE("Frustum") {
+		const Projection frustum = Projection::create_frustum(-0.3, 0.1, -0.2, 0.15, 0.05, 500);
+		check_oblique_near_plane(frustum, Plane(Vector3(-0.5, 0.4, -1).normalized(), Vector3(0, 0, -3)));
+	}
+
+	SUBCASE("Orthographic") {
+		const Projection ortho = Projection::create_orthogonal(-8, 8, -4.5, 4.5, 0.05, 100);
+		check_oblique_near_plane(ortho, Plane(Vector3(0.2, 0.6, -1).normalized(), Vector3(0, 0, -20)));
+		// The visible side faces the camera, so the farthest visible corner is on the near face.
+		check_oblique_near_plane(ortho, Plane(Vector3(0, 0.5, 1).normalized(), Vector3(0, 0, -50)));
+	}
+
+	SUBCASE("Eye offset") {
+		Transform3D eye_offset;
+		eye_offset.origin = Vector3(0.5, 0, 0);
+		const Projection view = Projection::create_perspective(90, 1, 0.05, 400) * Projection(eye_offset.inverse());
+
+		// The eye is behind this plane even though the origin is not.
+		check_oblique_near_plane(view, Plane(Vector3(-1, 0, 0), Vector3(0.25, 0, 0)));
+
+		Projection rejected = view;
+		CHECK_FALSE(rejected.set_oblique_near_plane(Plane(Vector3(1, 0, 0), Vector3(0.25, 0, 0))));
+		CHECK(rejected == view);
+	}
+
+	SUBCASE("Eye on the visible side") {
+		const Projection persp = Projection::create_perspective(70, 1, 0.05, 400);
+		Projection rejected = persp;
+		CHECK_FALSE(rejected.set_oblique_near_plane(Plane(Vector3(0, 0, 1), Vector3(0, 0, -5))));
+		CHECK(rejected == persp);
+	}
+}
+
 TEST_CASE("[Projection] Set light bias") {
 	Projection proj;
 	proj.set_light_bias();
