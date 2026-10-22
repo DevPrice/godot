@@ -56,7 +56,7 @@ layout(set = 0, binding = 0) uniform sampler2D source_color;
 layout(set = 1, binding = 0) uniform sampler2D source_auto_exposure;
 #endif
 
-#if defined(MODE_LINEARIZE_DEPTH_COPY) || defined(MODE_SIMPLE_COPY_DEPTH)
+#if defined(MODE_LINEARIZE_DEPTH_COPY) || defined(MODE_SIMPLE_COPY_DEPTH) || defined(MODE_DEPTH_PROJECTION_COPY)
 layout(r32f, set = 3, binding = 0) uniform restrict writeonly image2D dest_buffer;
 #elif defined(DST_IMAGE_8BIT)
 layout(rgba8, set = 3, binding = 0) uniform restrict writeonly image2D dest_buffer;
@@ -264,6 +264,20 @@ void main() {
 
 	imageStore(dest_buffer, pos + params.target, color);
 #endif // MODE_LINEARIZE_DEPTH_COPY
+
+#ifdef MODE_DEPTH_PROJECTION_COPY
+
+	// set_color holds the depth row of the destination clip space in terms of the source's (see CopyEffects).
+	// Cleared texels have no surface to convert. Surfaces outside the destination's near and far planes are clamped
+	// onto them, as the destination would not have drawn them.
+	float depth = texelFetch(source_color, pos + params.section.xy, 0).r;
+	if (depth != 0.0) {
+		vec2 ndc = (vec2(pos) + 0.5) / vec2(params.section.zw) * 2.0 - 1.0;
+		depth = clamp(dot(params.set_color, vec4(ndc, depth, 1.0)), 0.0, 1.0);
+	}
+
+	imageStore(dest_buffer, pos + params.target, vec4(depth));
+#endif // MODE_DEPTH_PROJECTION_COPY
 
 #if defined(MODE_OCTMAP_TO_PANORAMA) || defined(MODE_OCTMAP_ARRAY_TO_PANORAMA)
 

@@ -122,6 +122,7 @@ private:
 		COPY_MODE_LINEARIZE_DEPTH,
 		COPY_MODE_OCTMAP_TO_PANORAMA,
 		COPY_MODE_OCTMAP_ARRAY_TO_PANORAMA,
+		COPY_MODE_DEPTH_PROJECTION,
 		COPY_MODE_MAX,
 
 	};
@@ -369,6 +370,9 @@ public:
 	void copy_octmap_to_panorama(RID p_source_octmap, RID p_dest_panorama, const Size2i &p_panorama_size, float p_lod, bool p_is_array, const Size2 &p_source_octmap_border_size);
 	void copy_depth_to_rect(RID p_source_rd_texture, RID p_dest_framebuffer, const Rect2i &p_rect, bool p_flip_y = false);
 	void copy_depth_to_rect_and_linearize(RID p_source_rd_texture, RID p_dest_texture, const Rect2i &p_rect, bool p_flip_y, float p_z_near, float p_z_far);
+	// Converts depth rendered with p_source_projection to what p_dest_projection would have written. The projections must
+	// share their x, y and w rows, as they do when one only adds an oblique near plane to the other.
+	void copy_depth_with_projection(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, const Projection &p_source_projection, const Projection &p_dest_projection);
 	void copy_to_fb_rect(RID p_source_rd_texture, RID p_dest_framebuffer, const Rect2i &p_rect, bool p_flip_y = false, bool p_force_luminance = false, bool p_alpha_to_zero = false, bool p_srgb = false, RID p_secondary = RID(), bool p_multiview = false, bool alpha_to_one = false, bool p_linear = false, bool p_normal = false, const Rect2 &p_src_rect = Rect2(), float p_linear_luminance_multiplier = 1.0, bool p_bilinear_filtering = true);
 	void copy_to_atlas_fb(RID p_source_rd_texture, RID p_dest_framebuffer, const Rect2 &p_uv_rect, RD::DrawListID p_draw_list, bool p_flip_y = false, bool p_panorama = false);
 	void copy_to_drawlist(RD::DrawListID p_draw_list, RD::FramebufferFormatID p_fb_format, RID p_source_rd_texture, bool p_linear = false, float p_linear_luminance_multiplier = 1.0);

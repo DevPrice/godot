@@ -100,6 +100,7 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 		copy_modes.push_back("\n#define MODE_LINEARIZE_DEPTH_COPY\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_TO_PANORAMA\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_ARRAY_TO_PANORAMA\n");
+		copy_modes.push_back("\n#define MODE_DEPTH_PROJECTION_COPY\n");
 
 		copy.shader.initialize(copy_modes);
 		memset(&copy.push_constant, 0, sizeof(CopyPushConstant));
@@ -563,6 +564,43 @@ void CopyEffects::copy_depth_to_rect_and_linearize(RID p_source_rd_texture, RID 
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 3, u_dest_texture), 3);
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &copy.push_constant, sizeof(CopyPushConstant));
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_rect.size.width, p_rect.size.height, 1);
+	RD::get_singleton()->compute_list_end();
+}
+
+void CopyEffects::copy_depth_with_projection(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, const Projection &p_source_projection, const Projection &p_dest_projection) {
+	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
+	ERR_FAIL_NULL(uniform_set_cache);
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+	ERR_FAIL_NULL(material_storage);
+
+	memset(&copy.push_constant, 0, sizeof(CopyPushConstant));
+	copy.push_constant.section[2] = p_size.width;
+	copy.push_constant.section[3] = p_size.height;
+
+	// With matching x, y and w rows, this maps source clip space to destination clip space while leaving x, y and w
+	// unchanged, so its z row gives the destination depth from source NDC directly.
+	Projection correction;
+	correction.set_depth_correction(true);
+	const Projection source_to_dest = (correction * p_dest_projection) * (correction * p_source_projection).inverse();
+	for (int i = 0; i < 4; i++) {
+		copy.push_constant.set_color[i] = source_to_dest.columns[i][2];
+	}
+
+	RID default_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+
+	RD::Uniform u_source_rd_texture(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ default_sampler, p_source_rd_texture }));
+	RD::Uniform u_dest_texture(RD::UNIFORM_TYPE_IMAGE, 0, p_dest_texture);
+
+	CopyMode mode = COPY_MODE_DEPTH_PROJECTION;
+	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
+	ERR_FAIL_COND(shader.is_null());
+
+	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, copy.pipelines[mode].get_rid());
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 0, u_source_rd_texture), 0);
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 3, u_dest_texture), 3);
+	RD::get_singleton()->compute_list_set_push_constant(compute_list, &copy.push_constant, sizeof(CopyPushConstant));
+	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_size.width, p_size.height, 1);
 	RD::get_singleton()->compute_list_end();
 }
 

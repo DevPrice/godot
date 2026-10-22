@@ -2576,6 +2576,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				params.sharpness = CLAMP(1.0f - (rb->get_fsr_sharpness() / 2.0f), 0.0f, 1.0f);
 				params.color = rb->get_internal_texture(v);
 				params.depth = rb->get_depth_texture(v);
+				if (p_render_data->scene_data->has_oblique_near_plane) {
+					// FSR2 derives distance from depth using only the near and far distances, so give it the depth the
+					// camera would have without its oblique near plane.
+					if (!rb->has_texture(SNAME("FSR2"), SNAME("depth"))) {
+						rb->create_texture(SNAME("FSR2"), SNAME("depth"), RD::DATA_FORMAT_R32_SFLOAT, RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1);
+					}
+					params.depth = rb->get_texture_slice(SNAME("FSR2"), SNAME("depth"), v, 0);
+					copy_effects->copy_depth_with_projection(rb->get_depth_texture(v), params.depth, rb->get_internal_size(), p_render_data->scene_data->get_view_clip_projection(v), p_render_data->scene_data->view_projection[v]);
+				}
 				params.velocity = rb->get_velocity_buffer(false, v);
 				params.reactive = rb->get_internal_texture_reactive(v);
 				params.exposure = exposure;
@@ -2590,6 +2599,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				Projection correction;
 				correction.set_depth_correction(true, true, false);
 
+				// Matches the depth FSR2 is given above, which never has an oblique near plane.
 				const Projection &prev_proj = p_render_data->scene_data->prev_cam_projection;
 				const Projection &cur_proj = p_render_data->scene_data->cam_projection;
 				const Transform3D &prev_transform = p_render_data->scene_data->prev_cam_transform;
