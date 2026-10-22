@@ -17,6 +17,9 @@ layout(set = 0, binding = 5, std140) uniform SceneData {
 	mat4 inv_projection[2];
 	mat4 reprojection[2];
 	vec4 eye_offset[2];
+	// Per-UV depth ramp added by an oblique near plane (see SSEffects::screen_space_reflection()). Tracing subtracts it,
+	// as its steep screen-space gradient otherwise makes rays hit the surface they leave from in the next texel.
+	vec4 depth_ramp[2];
 }
 scene_data;
 
@@ -41,10 +44,8 @@ vec2 compute_cell_count(int level) {
 	return vec2(cell_count_x, cell_count_y);
 }
 
-float linearize_depth(float depth) {
-	vec4 pos = vec4(0.0, 0.0, depth, 1.0);
-	pos = scene_data.inv_projection[params.view_index] * pos;
-	return pos.z / pos.w;
+float depth_ramp(vec2 uv) {
+	return dot(scene_data.depth_ramp[params.view_index].xy, uv);
 }
 
 vec3 compute_view_pos(vec3 screen_pos) {
@@ -151,6 +152,11 @@ void main() {
 
 		vec3 screen_end_pos = compute_screen_pos(end_pos);
 
+		vec2 ramp = scene_data.depth_ramp[params.view_index].xy;
+		bool has_ramp = any(notEqual(ramp, vec2(0.0)));
+		screen_pos.z -= depth_ramp(screen_pos.xy);
+		screen_end_pos.z -= depth_ramp(screen_end_pos.xy);
+
 		// Normalize Z to -1.0 or +1.0 and do parametric T tracing as suggested here:
 		// https://hacksoflife.blogspot.com/2020/10/a-tip-for-hiz-ssr-parametric-t-tracing.html
 		vec3 screen_ray_dir = screen_end_pos - screen_pos;
@@ -187,7 +193,13 @@ void main() {
 			vec2 cell_count = compute_cell_count(cur_level);
 			vec2 cell_index = floor(cur_screen_pos.xy * cell_count);
 			float cell_depth = texelFetch(source_hiz, ivec2(cell_index), cur_level).x;
-			float depth_t = (cell_depth - screen_pos.z) * screen_ray_dir.z; // Z is either -1.0 or 1.0 so we don't need to do a divide.
+
+			// The ramp is affine, so over a coarse cell its minimum is at a corner, which keeps the Hi-Z maximum a bound.
+			// Level 0 uses the texel center, as the depth comparison does without a ramp.
+			float cell_ramp = cur_level == 0 ? depth_ramp((cell_index + 0.5) / cell_count) : depth_ramp(cell_index / cell_count) + min(0.0, ramp.x / cell_count.x) + min(0.0, ramp.y / cell_count.y);
+			// A cleared texel is infinitely far, which with a ramp is no longer a depth of 0.
+			float traced_cell_depth = (has_ramp && cell_depth == 0.0) ? -1e20 : cell_depth - cell_ramp;
+			float depth_t = (traced_cell_depth - screen_pos.z) * screen_ray_dir.z; // Z is either -1.0 or 1.0 so we don't need to do a divide.
 
 			vec2 new_cell_index = cell_index + clamp(cell_step, vec2(0.0), vec2(1.0));
 			vec2 new_cell_pos = (new_cell_index / cell_count) + cell_step * 0.000001;
@@ -198,8 +210,8 @@ void main() {
 			int mip_offset = hit ? -1 : +1;
 
 			if (cur_level == 0) {
-				float z0 = linearize_depth(cell_depth);
-				float z1 = linearize_depth(cur_screen_pos.z);
+				float z0 = compute_view_pos(vec3(cur_screen_pos.xy, cell_depth)).z;
+				float z1 = compute_view_pos(vec3(cur_screen_pos.xy, cur_screen_pos.z + depth_ramp(cur_screen_pos.xy))).z;
 
 				if ((z0 - z1) > params.depth_tolerance) {
 					hit = false;
@@ -220,6 +232,7 @@ void main() {
 		}
 
 		vec3 cur_screen_pos = screen_pos + screen_ray_dir * t;
+		cur_screen_pos.z += depth_ramp(cur_screen_pos.xy);
 
 		vec4 reprojected_pos;
 		reprojected_pos.xy = cur_screen_pos.xy * 2.0 - 1.0;

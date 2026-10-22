@@ -42,33 +42,33 @@ private:
 	bool prefer_raster_effects;
 
 	struct BokehPushConstant {
-		uint32_t size[2];
-		float z_far;
-		float z_near;
+		float view_z_row[4];
+		float view_w_row[4];
 
-		uint32_t orthogonal;
+		uint32_t size[2];
 		float blur_size;
 		float blur_scale;
+
 		uint32_t steps;
 
 		uint32_t blur_near_active;
 		float blur_near_begin;
 		float blur_near_end;
-		uint32_t blur_far_active;
 
+		uint32_t blur_far_active;
 		float blur_far_begin;
 		float blur_far_end;
 		uint32_t second_pass;
-		uint32_t half_size;
 
+		uint32_t half_size;
 		uint32_t use_jitter;
 		float jitter_seed;
 		uint32_t use_physical_near;
-		uint32_t use_physical_far;
 
+		uint32_t use_physical_far;
 		float blur_size_near;
 		float blur_size_far;
-		uint32_t pad[2];
+		float z_far;
 	};
 
 	enum BokehMode {
@@ -113,8 +113,8 @@ public:
 	BokehDOF(bool p_prefer_raster_effects);
 	~BokehDOF();
 
-	void bokeh_dof_compute(const BokehBuffers &p_buffers, RID p_camera_attributes, float p_cam_znear, float p_cam_zfar, bool p_cam_orthogonal);
-	void bokeh_dof_raster(const BokehBuffers &p_buffers, RID p_camera_attributes, float p_cam_znear, float p_cam_zfar, bool p_cam_orthogonal);
+	void bokeh_dof_compute(const BokehBuffers &p_buffers, RID p_camera_attributes, const Projection &p_cam_projection, float p_cam_zfar);
+	void bokeh_dof_raster(const BokehBuffers &p_buffers, RID p_camera_attributes, const Projection &p_cam_projection, float p_cam_zfar);
 };
 
 } // namespace RendererRD

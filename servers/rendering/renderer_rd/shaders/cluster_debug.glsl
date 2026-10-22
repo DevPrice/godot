@@ -77,8 +77,14 @@ void main() {
 	offset *= (params.max_cluster_element_count_div_32 + 32);
 
 	//depth buffers generally can't be accessed via image API
-	vec4 ndc = vec4((vec2(screen_pos) + 0.5) / vec2(params.screen_size) * 2.0 - 1.0, texelFetch(sampler2D(depth_buffer, depth_buffer_sampler), ivec2(screen_pos), 0).r, 1.0);
-	float depth = -dot(params.view_z_row, ndc) / dot(params.view_w_row, ndc) / params.z_far;
+	float depth = texelFetch(sampler2D(depth_buffer, depth_buffer_sampler), ivec2(screen_pos), 0).r;
+	// Cleared depth is the far plane, which an oblique near plane tilts away from z_far.
+	if (depth == 0.0) {
+		depth = 1.0;
+	} else {
+		vec4 ndc = vec4((vec2(screen_pos) + 0.5) / vec2(params.screen_size) * 2.0 - 1.0, depth, 1.0);
+		depth = -dot(params.view_z_row, ndc) / dot(params.view_w_row, ndc) / params.z_far;
+	}
 
 	uint slice = uint(clamp(floor(depth * 32.0), 0.0, 31.0));
 	uint slice_minmax = cluster_data.data[offset + params.max_cluster_element_count_div_32 + slice];

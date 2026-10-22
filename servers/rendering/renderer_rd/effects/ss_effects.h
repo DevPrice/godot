@@ -94,7 +94,7 @@ public:
 
 	/* SS Downsampler */
 
-	void downsample_depth(Ref<RenderSceneBuffersRD> p_render_buffers, uint32_t p_view, const Projection &p_projection);
+	void downsample_depth(Ref<RenderSceneBuffersRD> p_render_buffers, uint32_t p_view, const Projection &p_projection, float p_z_far);
 
 	/* SSIL */
 	void ssil_set_quality(RSE::EnvironmentSSILQuality p_quality, bool p_half_size, float p_adaptive_target, int p_blur_passes, float p_fadeout_from, float p_fadeout_to);
@@ -154,14 +154,14 @@ public:
 	};
 
 	void ssr_allocate_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, SSRRenderBuffers &p_ssr_buffers, const RD::DataFormat p_color_format);
-	void screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffers, SSRRenderBuffers &p_ssr_buffers, const RID *p_normal_roughness_slices, int p_max_steps, float p_fade_in, float p_fade_out, float p_tolerance, const Projection *p_projections, const Projection *p_reprojections, const Vector3 *p_eye_offsets, RendererRD::CopyEffects &p_copy_effects);
+	void screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffers, SSRRenderBuffers &p_ssr_buffers, const RID *p_normal_roughness_slices, int p_max_steps, float p_fade_in, float p_fade_out, float p_tolerance, const Projection *p_projections, const Projection *p_reference_projections, const Projection *p_reprojections, const Vector3 *p_eye_offsets, RendererRD::CopyEffects &p_copy_effects);
 
 	/* subsurface scattering */
 	void sss_set_quality(RSE::SubSurfaceScatteringQuality p_quality);
 	RSE::SubSurfaceScatteringQuality sss_get_quality() const;
 	void sss_set_scale(float p_scale, float p_depth_scale);
 
-	void sub_surface_scattering(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_diffuse, RID p_depth, const Projection &p_camera, const Size2i &p_screen_size);
+	void sub_surface_scattering(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_diffuse, RID p_depth, const Projection &p_camera, float p_z_far, const Size2i &p_screen_size);
 
 	/* Screen Space Shadows */
 	struct SSCSRenderBuffers {
@@ -203,12 +203,11 @@ private:
 	/* SS Downsampler */
 
 	struct SSEffectsDownsamplePushConstant {
+		float view_z_row[4];
+		float view_w_row[4];
 		float pixel_size[2];
-		float z_far;
-		float z_near;
-		uint32_t orthogonal;
 		float radius_sq;
-		uint32_t pad[2];
+		float z_far;
 	};
 
 	enum SSEffectsMode {
@@ -465,6 +464,7 @@ private:
 		float inv_projection[2][16];
 		float reprojection[2][16];
 		float eye_offset[2][4];
+		float depth_ramp[2][4];
 	};
 
 	struct ScreenSpaceReflectionPushConstant {
@@ -549,17 +549,17 @@ private:
 	};
 
 	struct SubSurfaceScatteringPushConstant {
-		int32_t screen_size[2];
-		float camera_z_far;
-		float camera_z_near;
+		float view_z_row[4];
+		float view_w_row[4];
 
+		int32_t screen_size[2];
 		uint32_t vertical;
 		uint32_t orthogonal;
+
 		float unit_size;
 		float scale;
-
 		float depth_scale;
-		uint32_t pad[3];
+		float z_far;
 	};
 
 	struct SubSurfaceScattering {

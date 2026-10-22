@@ -1,33 +1,42 @@
 layout(push_constant, std430) uniform Params {
-	ivec2 size;
-	float z_far;
-	float z_near;
+	// See MaterialStorage::store_view_depth_rows().
+	vec4 view_z_row;
+	vec4 view_w_row;
 
-	bool orthogonal;
+	ivec2 size;
 	float blur_size;
 	float blur_scale;
-	int blur_steps;
 
+	int blur_steps;
 	bool blur_near_active;
 	float blur_near_begin;
 	float blur_near_end;
-	bool blur_far_active;
 
+	bool blur_far_active;
 	float blur_far_begin;
 	float blur_far_end;
 	bool second_pass;
-	bool half_size;
 
+	bool half_size;
 	bool use_jitter;
 	float jitter_seed;
 	bool use_physical_near;
-	bool use_physical_far;
 
+	bool use_physical_far;
 	float blur_size_near;
 	float blur_size_far;
-	uint pad[2];
+	float z_far;
 }
 params;
+
+float get_view_depth(vec2 p_uv, float p_depth) {
+	// Cleared depth is the far plane, which an oblique near plane tilts away from z_far.
+	if (p_depth == 0.0) {
+		return params.z_far;
+	}
+	vec4 ndc = vec4(p_uv * 2.0 - 1.0, p_depth, 1.0);
+	return -dot(params.view_z_row, ndc) / dot(params.view_w_row, ndc);
+}
 
 //used to work around downsampling filter
 #define DEPTH_GAP 0.0

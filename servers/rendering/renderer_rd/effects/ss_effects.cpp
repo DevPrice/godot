@@ -534,7 +534,7 @@ SSEffects::~SSEffects() {
 
 /* SS Downsampler */
 
-void SSEffects::downsample_depth(Ref<RenderSceneBuffersRD> p_render_buffers, uint32_t p_view, const Projection &p_projection) {
+void SSEffects::downsample_depth(Ref<RenderSceneBuffersRD> p_render_buffers, uint32_t p_view, const Projection &p_projection, float p_z_far) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
@@ -608,23 +608,8 @@ void SSEffects::downsample_depth(Ref<RenderSceneBuffersRD> p_render_buffers, uin
 		downsample_uniform_set = uniform_set_cache->get_cache_vec(shader, 2, u_depths);
 	}
 
-	Projection correction;
-	correction.set_depth_correction(false);
-	Projection temp = correction * p_projection;
-
-	float depth_linearize_mul = -temp.columns[3][2];
-	float depth_linearize_add = temp.columns[2][2];
-	if (depth_linearize_mul * depth_linearize_add < 0) {
-		depth_linearize_add = -depth_linearize_add;
-	}
-
-	ss_effects.downsample_push_constant.orthogonal = p_projection.is_orthogonal();
-	ss_effects.downsample_push_constant.z_near = depth_linearize_mul;
-	ss_effects.downsample_push_constant.z_far = depth_linearize_add;
-	if (ss_effects.downsample_push_constant.orthogonal) {
-		ss_effects.downsample_push_constant.z_near = p_projection.get_z_near();
-		ss_effects.downsample_push_constant.z_far = p_projection.get_z_far();
-	}
+	MaterialStorage::store_view_depth_rows(p_projection, ss_effects.downsample_push_constant.view_z_row, ss_effects.downsample_push_constant.view_w_row);
+	ss_effects.downsample_push_constant.z_far = p_z_far;
 	ss_effects.downsample_push_constant.pixel_size[0] = 1.0 / full_screen_size.x;
 	ss_effects.downsample_push_constant.pixel_size[1] = 1.0 / full_screen_size.y;
 	ss_effects.downsample_push_constant.radius_sq = 1.0;
@@ -1498,7 +1483,7 @@ void SSEffects::ssr_allocate_buffers(Ref<RenderSceneBuffersRD> p_render_buffers,
 	}
 }
 
-void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffers, SSRRenderBuffers &p_ssr_buffers, const RID *p_normal_roughness_slices, int p_max_steps, float p_fade_in, float p_fade_out, float p_tolerance, const Projection *p_projections, const Projection *p_reprojections, const Vector3 *p_eye_offsets, RendererRD::CopyEffects &p_copy_effects) {
+void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffers, SSRRenderBuffers &p_ssr_buffers, const RID *p_normal_roughness_slices, int p_max_steps, float p_fade_in, float p_fade_out, float p_tolerance, const Projection *p_projections, const Projection *p_reference_projections, const Projection *p_reprojections, const Vector3 *p_eye_offsets, RendererRD::CopyEffects &p_copy_effects) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
@@ -1526,6 +1511,19 @@ void SSEffects::screen_space_reflection(Ref<RenderSceneBuffersRD> p_render_buffe
 			scene_data.eye_offset[v][1] = p_eye_offsets[v].y;
 			scene_data.eye_offset[v][2] = p_eye_offsets[v].z;
 			scene_data.eye_offset[v][3] = 0.0f;
+
+			// An oblique near plane only changes the depth row, so its depth is an affine function of the reference depth
+			// plus a ramp that is affine in NDC xy. The shader traces with the ramp removed.
+			Vector2 depth_ramp;
+			if (p_projections[v] != p_reference_projections[v]) {
+				const Projection reference_to_clip = projection * (correction * p_reference_projections[v]).inverse();
+				// Per unit of UV rather than NDC.
+				depth_ramp = Vector2(reference_to_clip.columns[0][2], reference_to_clip.columns[1][2]) * 2.0;
+			}
+			scene_data.depth_ramp[v][0] = depth_ramp.x;
+			scene_data.depth_ramp[v][1] = depth_ramp.y;
+			scene_data.depth_ramp[v][2] = 0.0f;
+			scene_data.depth_ramp[v][3] = 0.0f;
 		}
 
 		RD::get_singleton()->buffer_update(ssr.ubo, 0, sizeof(ScreenSpaceReflectionSceneData), &scene_data);
@@ -1893,7 +1891,7 @@ void SSEffects::sss_set_scale(float p_scale, float p_depth_scale) {
 	sss_depth_scale = p_depth_scale;
 }
 
-void SSEffects::sub_surface_scattering(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_diffuse, RID p_depth, const Projection &p_camera, const Size2i &p_screen_size) {
+void SSEffects::sub_surface_scattering(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_diffuse, RID p_depth, const Projection &p_camera, float p_z_far, const Size2i &p_screen_size) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
@@ -1915,8 +1913,8 @@ void SSEffects::sub_surface_scattering(Ref<RenderSceneBuffersRD> p_render_buffer
 	{ //scale color and depth to half
 		RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
-		sss.push_constant.camera_z_far = p_camera.get_z_far();
-		sss.push_constant.camera_z_near = p_camera.get_z_near();
+		MaterialStorage::store_view_depth_rows(p_camera, sss.push_constant.view_z_row, sss.push_constant.view_w_row);
+		sss.push_constant.z_far = p_z_far;
 		sss.push_constant.orthogonal = p_camera.is_orthogonal();
 		sss.push_constant.unit_size = unit_size;
 		sss.push_constant.screen_size[0] = p_screen_size.x;

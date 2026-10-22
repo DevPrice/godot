@@ -26,12 +26,11 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(push_constant, std430) uniform Params {
+	vec4 view_z_row;
+	vec4 view_w_row;
 	vec2 pixel_size;
-	float z_far;
-	float z_near;
-	bool orthogonal;
 	float radius_sq;
-	uvec2 pad;
+	float z_far;
 }
 params;
 
@@ -47,34 +46,23 @@ layout(r16f, set = 2, binding = 3) uniform restrict writeonly image2DArray dest_
 #endif
 #endif
 
-vec4 screen_space_to_view_space_depth(vec4 p_depth) {
-	if (params.orthogonal) {
-		vec4 depth = p_depth * 2.0 - 1.0;
-		return -(depth * (params.z_far - params.z_near) - (params.z_far + params.z_near)) / 2.0;
+// See MaterialStorage::store_view_depth_rows(); with an oblique near plane, depth depends on the texel too.
+float screen_space_to_view_space_depth(float p_depth, ivec2 p_texel) {
+	// Cleared depth is the far plane, which an oblique near plane tilts away from z_far.
+	if (p_depth == 0.0) {
+		return params.z_far;
 	}
-
-	float depth_linearize_mul = params.z_near;
-	float depth_linearize_add = params.z_far;
-
-	// Optimized version of "-cameraClipNear / (cameraClipFar - projDepth * (cameraClipFar - cameraClipNear)) * cameraClipFar"
-
-	// Set your depth_linearize_mul and depth_linearize_add to:
-	// depth_linearize_mul = ( cameraClipFar * cameraClipNear) / ( cameraClipFar - cameraClipNear );
-	// depth_linearize_add = cameraClipFar / ( cameraClipFar - cameraClipNear );
-
-	return depth_linearize_mul / (depth_linearize_add - p_depth);
+	vec4 ndc = vec4((vec2(p_texel) + 0.5) * params.pixel_size * 2.0 - 1.0, p_depth, 1.0);
+	return -dot(params.view_z_row, ndc) / dot(params.view_w_row, ndc);
 }
 
-float screen_space_to_view_space_depth(float p_depth) {
-	if (params.orthogonal) {
-		float depth = p_depth * 2.0 - 1.0;
-		return -(depth * (params.z_far - params.z_near) - (params.z_far + params.z_near)) / 2.0;
-	}
-
-	float depth_linearize_mul = params.z_near;
-	float depth_linearize_add = params.z_far;
-
-	return depth_linearize_mul / (depth_linearize_add - p_depth);
+// p_depth in textureGather() order for the 2x2 texels starting at p_texel, p_step texels apart.
+vec4 screen_space_to_view_space_depth(vec4 p_depth, ivec2 p_texel, int p_step) {
+	return vec4(
+			screen_space_to_view_space_depth(p_depth.x, p_texel + ivec2(0, p_step)),
+			screen_space_to_view_space_depth(p_depth.y, p_texel + ivec2(p_step, p_step)),
+			screen_space_to_view_space_depth(p_depth.z, p_texel + ivec2(p_step, 0)),
+			screen_space_to_view_space_depth(p_depth.w, p_texel));
 }
 
 #ifdef GENERATE_MIPS
@@ -89,8 +77,8 @@ float mip_smart_average(vec4 p_depths) {
 	return dot(weights, p_depths) / dot(weights, vec4(1.0, 1.0, 1.0, 1.0));
 }
 
-void prepare_depths_and_mips(vec4 p_samples, uvec2 p_output_coord, uvec2 p_gtid) {
-	p_samples = screen_space_to_view_space_depth(p_samples);
+void prepare_depths_and_mips(vec4 p_samples, ivec2 p_texel, int p_step, uvec2 p_output_coord, uvec2 p_gtid) {
+	p_samples = screen_space_to_view_space_depth(p_samples, p_texel, p_step);
 
 	depth_buffer[0][p_gtid.x][p_gtid.y] = p_samples.w;
 	depth_buffer[1][p_gtid.x][p_gtid.y] = p_samples.z;
@@ -171,8 +159,8 @@ void prepare_depths_and_mips(vec4 p_samples, uvec2 p_output_coord, uvec2 p_gtid)
 }
 #else
 #ifndef USE_HALF_BUFFERS
-void prepare_depths(vec4 p_samples, uvec2 p_tid) {
-	p_samples = screen_space_to_view_space_depth(p_samples);
+void prepare_depths(vec4 p_samples, ivec2 p_texel, int p_step, uvec2 p_tid) {
+	p_samples = screen_space_to_view_space_depth(p_samples, p_texel, p_step);
 
 	imageStore(dest_image0, ivec3(p_tid, 0), vec4(p_samples.w));
 	imageStore(dest_image0, ivec3(p_tid, 1), vec4(p_samples.z));
@@ -186,14 +174,14 @@ void main() {
 #ifdef USE_HALF_BUFFERS
 // Half buffers means that we divide depth into two half res buffers (we only capture 1/4 of pixels).
 #ifdef USE_HALF_SIZE
-	float sample_00 = texelFetch(source_depth, ivec2(4 * gl_GlobalInvocationID.x + 0, 4 * gl_GlobalInvocationID.y + 0), 0).x;
-	float sample_11 = texelFetch(source_depth, ivec2(4 * gl_GlobalInvocationID.x + 2, 4 * gl_GlobalInvocationID.y + 2), 0).x;
+	ivec2 texel_00 = ivec2(4 * gl_GlobalInvocationID.xy);
+	ivec2 texel_11 = texel_00 + ivec2(2, 2);
 #else
-	float sample_00 = texelFetch(source_depth, ivec2(2 * gl_GlobalInvocationID.x + 0, 2 * gl_GlobalInvocationID.y + 0), 0).x;
-	float sample_11 = texelFetch(source_depth, ivec2(2 * gl_GlobalInvocationID.x + 1, 2 * gl_GlobalInvocationID.y + 1), 0).x;
+	ivec2 texel_00 = ivec2(2 * gl_GlobalInvocationID.xy);
+	ivec2 texel_11 = texel_00 + ivec2(1, 1);
 #endif
-	sample_00 = screen_space_to_view_space_depth(sample_00);
-	sample_11 = screen_space_to_view_space_depth(sample_11);
+	float sample_00 = screen_space_to_view_space_depth(texelFetch(source_depth, texel_00, 0).x, texel_00);
+	float sample_11 = screen_space_to_view_space_depth(texelFetch(source_depth, texel_11, 0).x, texel_11);
 
 	imageStore(dest_image0, ivec3(gl_GlobalInvocationID.xy, 0), vec4(sample_00));
 	imageStore(dest_image0, ivec3(gl_GlobalInvocationID.xy, 3), vec4(sample_11));
@@ -201,6 +189,7 @@ void main() {
 #ifdef USE_HALF_SIZE
 	ivec2 depth_buffer_coord = 4 * ivec2(gl_GlobalInvocationID.xy);
 	ivec2 output_coord = ivec2(gl_GlobalInvocationID);
+	const int sample_step = 2;
 
 	vec2 uv = (vec2(depth_buffer_coord) + 0.5f) * params.pixel_size;
 	vec4 samples;
@@ -211,14 +200,15 @@ void main() {
 #else
 	ivec2 depth_buffer_coord = 2 * ivec2(gl_GlobalInvocationID.xy);
 	ivec2 output_coord = ivec2(gl_GlobalInvocationID);
+	const int sample_step = 1;
 
 	vec2 uv = (vec2(depth_buffer_coord) + 0.5f) * params.pixel_size;
 	vec4 samples = textureGather(source_depth, uv);
 #endif //USE_HALF_SIZE
 #ifdef GENERATE_MIPS
-	prepare_depths_and_mips(samples, output_coord, gl_LocalInvocationID.xy);
+	prepare_depths_and_mips(samples, depth_buffer_coord, sample_step, output_coord, gl_LocalInvocationID.xy);
 #else
-	prepare_depths(samples, gl_GlobalInvocationID.xy);
+	prepare_depths(samples, depth_buffer_coord, sample_step, gl_GlobalInvocationID.xy);
 #endif
 #endif //USE_HALF_BUFFERS
 }
