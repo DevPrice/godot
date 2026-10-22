@@ -270,10 +270,6 @@ private:
 		float NDC_to_view_mul[2];
 		float NDC_to_view_add[2];
 
-		float pad2[2];
-		float z_near;
-		float z_far;
-
 		float radius;
 		float intensity;
 		int size_multiplier;
@@ -313,6 +309,8 @@ private:
 
 	struct SSILProjectionUniforms {
 		float inv_last_frame_projection_matrix[16];
+		float view_z_row[4];
+		float view_w_row[4];
 	};
 
 	struct SSIL {

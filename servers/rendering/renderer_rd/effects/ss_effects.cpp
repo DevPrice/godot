@@ -781,6 +781,7 @@ void SSEffects::screen_space_indirect_lighting(Ref<RenderSceneBuffersRD> p_rende
 	//Store projection info before starting the compute list
 	SSILProjectionUniforms projection_uniforms;
 	store_camera(p_last_projection, projection_uniforms.inv_last_frame_projection_matrix);
+	MaterialStorage::store_view_depth_rows(p_projection, projection_uniforms.view_z_row, projection_uniforms.view_w_row);
 
 	RD::get_singleton()->buffer_update(ssil.projection_uniform_buffer, 0, sizeof(SSILProjectionUniforms), &projection_uniforms);
 
@@ -810,8 +811,6 @@ void SSEffects::screen_space_indirect_lighting(Ref<RenderSceneBuffersRD> p_rende
 		ssil.gather_push_constant.NDC_to_view_mul[1] = tan_half_fov_y * -2.0;
 		ssil.gather_push_constant.NDC_to_view_add[0] = tan_half_fov_x * -1.0;
 		ssil.gather_push_constant.NDC_to_view_add[1] = tan_half_fov_y;
-		ssil.gather_push_constant.z_near = p_projection.get_z_near();
-		ssil.gather_push_constant.z_far = p_projection.get_z_far();
 		ssil.gather_push_constant.is_orthogonal = p_projection.is_orthogonal();
 
 		ssil.gather_push_constant.radius = p_settings.radius;

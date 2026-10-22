@@ -399,6 +399,16 @@ public:
 		}
 	}
 
+	// Rows of the inverse of p_projection (after depth correction) giving view z and w for NDC (xy, depth, 1):
+	// view_z = dot(z_row, ndc) / dot(w_row, ndc).
+	static _FORCE_INLINE_ void store_view_depth_rows(const Projection &p_projection, float *p_z_row, float *p_w_row) {
+		const Projection inv = (Projection::create_depth_correction(true) * p_projection).inverse();
+		for (int i = 0; i < 4; i++) {
+			p_z_row[i] = inv.columns[i][2];
+			p_w_row[i] = inv.columns[i][3];
+		}
+	}
+
 	static _FORCE_INLINE_ void store_soft_shadow_kernel(const float *p_kernel, float *p_array) {
 		for (int i = 0; i < 128; i++) {
 			p_array[i] = p_kernel[i];

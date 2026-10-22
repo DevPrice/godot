@@ -85,6 +85,9 @@ layout(r8, set = 2, binding = 1) uniform image2D edges_weights_image;
 layout(set = 3, binding = 0) uniform sampler2D last_frame;
 layout(set = 3, binding = 1) uniform ProjectionConstants {
 	mat4 reprojection;
+	// See MaterialStorage::store_view_depth_rows().
+	vec4 view_z_row;
+	vec4 view_w_row;
 }
 projection_constants;
 
@@ -98,10 +101,6 @@ layout(push_constant, std430) uniform Params {
 
 	vec2 NDC_to_view_mul;
 	vec2 NDC_to_view_add;
-
-	vec2 pad2;
-	float z_near;
-	float z_far;
 
 	float radius;
 	float intensity;
@@ -200,8 +199,14 @@ void SSIL_tap_inner(const int p_quality_level, inout vec3 r_color_sum, inout flo
 		weight = SSIL_HALOING_REDUCTION_AMOUNT * reduce + (1.0 - SSIL_HALOING_REDUCTION_AMOUNT);
 	}
 
-	// Translate sampling_uv to last screen's coordinates
-	const vec4 sample_pos = projection_constants.reprojection * vec4(p_sampling_uv * 2.0 - 1.0, (viewspace_sample_z - params.z_near) / (params.z_far - params.z_near) * 2.0 - 1.0, 1.0);
+	// Translate sampling_uv to last screen's coordinates. The NDC depth is recovered by inverting
+	// view_z = dot(view_z_row, ndc) / dot(view_w_row, ndc), which is linear in ndc.z.
+	const vec3 ndc_xy1 = vec3(p_sampling_uv * 2.0 - 1.0, 1.0);
+	const float view_z = -viewspace_sample_z;
+	const vec4 z_row = projection_constants.view_z_row;
+	const vec4 w_row = projection_constants.view_w_row;
+	const float ndc_z = (dot(z_row.xyw, ndc_xy1) - view_z * dot(w_row.xyw, ndc_xy1)) / (view_z * w_row.z - z_row.z);
+	const vec4 sample_pos = projection_constants.reprojection * vec4(ndc_xy1.xy, ndc_z, 1.0);
 	vec2 reprojected_sampling_uv = (sample_pos.xy / sample_pos.w) * 0.5 + 0.5;
 
 	weight *= p_weight_mod;
